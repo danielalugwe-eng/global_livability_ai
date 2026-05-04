@@ -1,0 +1,166 @@
+id: global_livability_pipeline
+namespace: global_livability_ai
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kestra Workflow — Global Livability AI Full Pipeline
+#
+# Schedule: every Sunday at 02:00 UTC (weekly data refresh)
+# Manual trigger: POST /api/v1/executions/global_livability_ai/global_livability_pipeline
+#
+# Steps:
+#   1. collect        — download raw data from WB / UNDP / WHO / Yale EPI
+#   2. validate_raw   — great_expectations checkpoint on raw CSVs
+#   3. harmonize      — merge sources → panel.parquet
+#   4. impute         — fill gaps → imputed.parquet
+#   5. features       — engineer lag/rolling features → features.parquet
+#   6. target         — build composite livability score → target.parquet
+#   7. validate_feat  — data quality check on features
+#   8. tune           — Optuna hyperparameter search
+#   9. train          — train XGBoost + RF, log to MLflow
+#  10. explain        — SHAP values
+#  11. forecast       — Prophet 5-year forecasts
+#  12. notify         — Slack / email on success or failure
+# ─────────────────────────────────────────────────────────────────────────────
+
+triggers:
+  - id: weekly_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 2 * * 0"    # every Sunday 02:00 UTC
+    timezone: UTC
+
+labels:
+  project: global-livability-ai
+  team: mlops
+
+inputs:
+  - id: force_recollect
+    type: BOOLEAN
+    defaults: false
+    description: "Set true to re-download raw data even if it already exists"
+
+tasks:
+
+  # ── 1. Collect raw data ────────────────────────────────────────────────────
+  - id: collect
+    type: io.kestra.plugin.scripts.python.Commands
+    namespaceFiles:
+      enabled: true
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/collect.py
+    env:
+      FORCE_RECOLLECT: "{{ inputs.force_recollect }}"
+    timeout: PT2H    # 2-hour timeout (global download is slow)
+
+  # ── 2. Validate raw data ───────────────────────────────────────────────────
+  - id: validate_raw
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python -m pytest tests/test_data_quality.py::test_raw_data -v --tb=short
+    dependsOn:
+      - collect
+
+  # ── 3. Harmonize ──────────────────────────────────────────────────────────
+  - id: harmonize
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/harmonize.py
+    dependsOn:
+      - validate_raw
+
+  # ── 4. Impute ─────────────────────────────────────────────────────────────
+  - id: impute
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/impute.py
+    dependsOn:
+      - harmonize
+
+  # ── 5. Feature engineering ────────────────────────────────────────────────
+  - id: features
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/features.py
+    dependsOn:
+      - impute
+
+  # ── 6. Build target ───────────────────────────────────────────────────────
+  - id: target
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/target.py
+    dependsOn:
+      - features
+
+  # ── 7. Validate feature store ─────────────────────────────────────────────
+  - id: validate_features
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python -m pytest tests/test_data_quality.py::test_feature_store -v --tb=short
+    dependsOn:
+      - target
+
+  # ── 8 + 9. Tune & train (sequential to share Optuna study) ───────────────
+  - id: tune_and_train
+    type: io.kestra.plugin.core.flow.Sequential
+    dependsOn:
+      - validate_features
+    tasks:
+      - id: tune
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/tune.py
+        timeout: PT1H
+
+      - id: train
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/train.py
+        env:
+          MLFLOW_TRACKING_URI: "{{ envs.MLFLOW_TRACKING_URI }}"
+
+  # ── 10 + 11. Explain & forecast (parallel — independent) ─────────────────
+  - id: post_train
+    type: io.kestra.plugin.core.flow.Parallel
+    dependsOn:
+      - tune_and_train
+    tasks:
+      - id: explain
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/explain.py
+
+      - id: forecast
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/forecast.py
+
+  # ── 12. Notify on success ─────────────────────────────────────────────────
+  - id: notify_success
+    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    dependsOn:
+      - post_train
+    url: "{{ secret('SLACK_WEBHOOK_URL') }}"
+    payload: |
+      {
+        "text": ":white_check_mark: *Global Livability AI* pipeline completed successfully.\nExecution: {{ execution.id }}\nDuration: {{ execution.duration }}"
+      }
+
+errors:
+  - id: notify_failure
+    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    url: "{{ secret('SLACK_WEBHOOK_URL') }}"
+    payload: |
+      {
+        "text": ":x: *Global Livability AI* pipeline FAILED.\nTask: {{ task.id }}\nError: {{ errorLogs() }}\nExecution: {{ execution.id }}"
+      }

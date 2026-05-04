@@ -1,0 +1,61 @@
+id: global_livability_model_retrain
+namespace: global_livability_ai
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Kestra Workflow — Model-only Retraining (without re-collecting data)
+#
+# Use this when you want to retrain the model with new hyperparameter configs
+# but already have up-to-date data in data/features/.
+# ─────────────────────────────────────────────────────────────────────────────
+
+triggers:
+  - id: manual_only
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 0 1 */3 *"   # quarterly (1st of Jan, Apr, Jul, Oct)
+    timezone: UTC
+
+tasks:
+
+  - id: tune
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/tune.py
+    timeout: PT1H
+
+  - id: train
+    type: io.kestra.plugin.scripts.python.Commands
+    containerImage: global-livability-ai:latest
+    commands:
+      - python src/train.py
+    env:
+      MLFLOW_TRACKING_URI: "{{ envs.MLFLOW_TRACKING_URI }}"
+    dependsOn:
+      - tune
+
+  - id: explain_and_forecast
+    type: io.kestra.plugin.core.flow.Parallel
+    dependsOn:
+      - train
+    tasks:
+      - id: explain
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/explain.py
+
+      - id: forecast
+        type: io.kestra.plugin.scripts.python.Commands
+        containerImage: global-livability-ai:latest
+        commands:
+          - python src/forecast.py
+
+  - id: notify
+    type: io.kestra.plugin.notifications.slack.SlackIncomingWebhook
+    dependsOn:
+      - explain_and_forecast
+    url: "{{ secret('SLACK_WEBHOOK_URL') }}"
+    payload: |
+      {
+        "text": ":arrows_counterclockwise: *Model retrain complete.*\nExecution: {{ execution.id }}"
+      }

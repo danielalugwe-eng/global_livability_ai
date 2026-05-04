@@ -1,0 +1,51 @@
+
+# ── Data & model artefacts (tracked by DVC, not Git) ─────────────────────────
+data/raw/
+data/processed/
+data/features/
+data/forecasts/
+models/*.pkl
+models/*.json
+models/*.txt
+app/assets/*.png
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Virtual environment ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Environment secrets ───────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Tooling ───────────────────────────────────────────────────────────────────
+.DS_Store
+optuna_study.db
+mlflow.db
+mlruns/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.log
+
+# ── Terraform state (never commit!) ──────────────────────────────────────────
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/plan.tfplan
+
+# ── DVC ───────────────────────────────────────────────────────────────────────
+/tmp/
+.dvc/tmp/

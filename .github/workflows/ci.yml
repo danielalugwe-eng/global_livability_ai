@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CI — Lint, type-check, unit tests
+# Runs on every push / PR to main
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+
+  # ── Code quality ────────────────────────────────────────────────────────────
+  quality:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install --no-cache-dir ruff mypy pytest
+
+      - name: Ruff lint
+        run: ruff check src/ app/ --output-format=github
+
+      - name: Ruff format check
+        run: ruff format --check src/ app/
+
+  # ── Unit & data-quality tests ──────────────────────────────────────────────
+  test:
+    name: Pytest
+    runs-on: ubuntu-latest
+    needs: quality
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt pytest
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --ignore=tests/test_data_quality.py
+
+  # ── Config validation ─────────────────────────────────────────────────────
+  config:
+    name: Validate config.yaml
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install pyyaml
+        run: pip install pyyaml
+
+      - name: Validate config.yaml parses cleanly
+        run: python -c "import yaml; yaml.safe_load(open('config.yaml'))"
+
+      - name: Validate pillar weights sum to 1.0
+        run: |
+          python - <<'EOF'
+          import yaml, sys
+          cfg = yaml.safe_load(open("config.yaml"))
+          total = sum(cfg["pillar_weights"].values())
+          if abs(total - 1.0) > 1e-6:
+              print(f"ERROR: pillar_weights sum={total}, expected 1.0")
+              sys.exit(1)
+          print(f"OK: pillar_weights sum={total}")
+          EOF

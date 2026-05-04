@@ -1,0 +1,12 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DVC — Data Version Control configuration
+# Tracks large data files in S3 instead of Git
+# ─────────────────────────────────────────────────────────────────────────────
+
+[core]
+    remote = s3_datalake
+    autostage = true
+
+['remote "s3_datalake"']
+    url = s3://gla-data-lake-dev
+    region = us-east-1

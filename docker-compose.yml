@@ -1,0 +1,143 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global Livability AI — Docker Compose
+# ─────────────────────────────────────────────────────────────────────────────
+# Full stack:
+#   pipeline   — runs collect → harmonize → impute → features → target
+#   train      — runs tune → train → explain → forecast
+#   app        — Streamlit dashboard (port 8501)
+#   kestra     — Kestra workflow server (port 8080)
+#   mlflow     — MLflow tracking server (port 5000)
+#
+# Usage:
+#   docker compose up app            # just the dashboard (needs pre-run data)
+#   docker compose run --rm pipeline # run full data pipeline
+#   docker compose up                # full stack
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+# ── Shared data volume (all services read/write same data/) ──────────────────
+volumes:
+  livability_data:
+  livability_models:
+  kestra_data:
+  mlflow_data:
+
+# ── Common environment ───────────────────────────────────────────────────────
+x-app-env: &app-env
+  environment:
+    - MLFLOW_TRACKING_URI=http://mlflow:5000
+    - PYTHONUNBUFFERED=1
+    - PYTHONDONTWRITEBYTECODE=1
+
+services:
+
+  # ── MLflow tracking server ──────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.12.2
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri sqlite:///mlflow/mlflow.db
+        --default-artifact-root /mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Data pipeline (collect → harmonize → impute → features → target) ──────
+  pipeline:
+    build: .
+    image: global-livability-ai:latest
+    <<: *app-env
+    command: >
+      sh -c "
+        python src/collect.py &&
+        python src/harmonize.py &&
+        python src/impute.py &&
+        python src/features.py &&
+        python src/target.py
+      "
+    volumes:
+      - livability_data:/app/data
+      - livability_models:/app/models
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  # ── Model training (tune → train → explain → forecast) ───────────────────
+  train:
+    build: .
+    image: global-livability-ai:latest
+    <<: *app-env
+    command: >
+      sh -c "
+        python src/tune.py &&
+        python src/train.py &&
+        python src/explain.py &&
+        python src/forecast.py
+      "
+    volumes:
+      - livability_data:/app/data
+      - livability_models:/app/models
+      - ./app/assets:/app/app/assets
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  # ── Streamlit dashboard ───────────────────────────────────────────────────
+  app:
+    build: .
+    image: global-livability-ai:latest
+    <<: *app-env
+    ports:
+      - "8501:8501"
+    volumes:
+      - livability_data:/app/data
+      - livability_models:/app/models
+      - ./app/assets:/app/app/assets
+    depends_on:
+      - mlflow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Kestra workflow orchestrator ─────────────────────────────────────────
+  kestra:
+    image: kestra/kestra:latest
+    command: server standalone
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - kestra_data:/app/storage
+      - ./kestra/flows:/app/flows
+      - /var/run/docker.sock:/var/run/docker.sock    # lets Kestra spawn Docker tasks
+    environment:
+      KESTRA_CONFIGURATION: |
+        datasources:
+          postgres:
+            url: jdbc:h2:mem:public;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+            driverClassName: org.h2.Driver
+            username: sa
+            password: ""
+        kestra:
+          repository:
+            type: memory
+          storage:
+            type: local
+            local:
+              basePath: "/app/storage"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/flows"]
+      interval: 30s
+      timeout: 10s
+      retries: 5

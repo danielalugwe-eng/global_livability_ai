@@ -1,0 +1,124 @@
+
+# Global Livability AI — Master Configuration
+
+# ── Scope ──────────────────────────────────────────────────────────────────────
+scope: global
+min_data_years: 5   # min years of WB data required to include a country
+
+# ── Data sources ───────────────────────────────────────────────────────────────
+years:
+  start: 2000
+  end: 2024
+
+sources:
+  world_bank:
+    indicators:
+      # Health
+      SP.DYN.LE00.IN: life_expectancy
+      SP.DYN.IMRT.IN: infant_mortality
+      SH.XPD.CHEX.PC.CD: healthcare_spend_per_capita
+      SH.MED.BEDS.ZS: hospital_beds_per_1000
+      # Economy
+      NY.GDP.PCAP.PP.CD: gdp_per_capita_ppp
+      SL.UEM.TOTL.ZS: unemployment_rate
+      NY.GNP.PCAP.PP.CD: gni_per_capita_ppp
+      # Education
+      SE.XPD.TOTL.GD.ZS: education_spend_pct_gdp
+      # Environment
+      EN.ATM.CO2E.PC: co2_emissions_per_capita
+      EG.ELC.ACCS.ZS: electricity_access_pct
+      # Infrastructure / Safety
+      IT.NET.USER.ZS: internet_users_pct
+      SP.URB.TOTL.IN.ZS: urban_population_pct
+      VC.IHR.PSRC.P5: homicide_rate_per_100k
+
+  undp_hdi:
+    url: "https://hdr.undp.org/sites/default/files/2023-24_HDR/HDR23-24_Statistical_Annex_HDI_Table.xlsx"
+    indicators:
+      - hdi_score
+      - mean_years_schooling
+      - expected_years_schooling
+
+  who_gho:
+    base_url: "https://ghoapi.azureedge.net/api"
+    indicators:
+      UHC_INDEX_REPORTED: uhc_service_coverage_index
+      FINPROTECTION_CATA_TOT_10_POP: financial_hardship_pct
+      MDG_0000000001: tb_incidence_per_100k
+
+  yale_epi:
+    url: "https://epi.yale.edu/downloads/epi2024results05302024.xlsx"
+    indicators:
+      - epi_score
+      - air_quality_score
+      - ecosystem_vitality_score
+      - water_sanitation_score
+
+# ── Pillar weights (must sum to 1.0) ──────────────────────────────────────────
+pillar_weights:
+  health: 0.30
+  economy: 0.25
+  education: 0.15
+  environment: 0.20
+  safety_infra: 0.10
+
+pillar_indicators:
+  health:
+    positive: [life_expectancy, uhc_service_coverage_index, healthcare_spend_per_capita, hospital_beds_per_1000]
+    negative: [infant_mortality]   # inverted (lower is better)
+  economy:
+    positive: [gdp_per_capita_ppp, gni_per_capita_ppp]
+    negative: [unemployment_rate]
+  education:
+    positive: [mean_years_schooling, expected_years_schooling, education_spend_pct_gdp]
+    negative: []
+  environment:
+    positive: [epi_score, air_quality_score, ecosystem_vitality_score, water_sanitation_score]
+    negative: [co2_emissions_per_capita]
+  safety_infra:
+    positive: [electricity_access_pct, internet_users_pct]
+    negative: [homicide_rate_per_100k]
+
+# ── Optuna hyperparameter search spaces ───────────────────────────────────────
+optuna:
+  xgboost:
+    n_trials: 100
+    params:
+      n_estimators: [100, 1000]
+      max_depth: [2, 8]
+      learning_rate: [0.01, 0.3]   # log scale
+      subsample: [0.5, 1.0]
+      colsample_bytree: [0.5, 1.0]
+      min_child_weight: [1, 10]
+      reg_alpha: [1.0e-5, 10.0]    # log scale
+      reg_lambda: [1.0e-5, 10.0]   # log scale
+    early_stopping_rounds: 50
+
+  random_forest:
+    n_trials: 50
+    params:
+      n_estimators: [100, 500]
+      max_depth: [3, 15]
+      min_samples_split: [2, 20]
+      min_samples_leaf: [1, 10]
+      max_features: ["sqrt", "log2", 0.5, 0.8]
+
+  prophet:
+    changepoint_prior_scale: [0.001, 0.5]
+    seasonality_prior_scale: [0.01, 10.0]
+
+# ── Temporal split ─────────────────────────────────────────────────────────────
+temporal_split:
+  train_end: 2019
+  test_start: 2020
+
+cv:
+  n_splits: 5
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+paths:
+  raw: data/raw
+  processed: data/processed
+  features: data/features
+  models: models
+  app_assets: app/assets

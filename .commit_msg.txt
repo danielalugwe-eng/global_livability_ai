@@ -1,0 +1,12 @@
+feat: initial commit - global livability AI with MLOps stack
+
+- Global pipeline: collect, harmonize, impute, features, target, tune, train, explain, forecast
+- MLflow experiment tracking integrated into train.py
+- Docker: Dockerfile + docker-compose (app, pipeline, train, kestra, mlflow services)
+- Terraform: S3 data lake (versioned, encrypted), ECR, ECS Fargate, IAM least-privilege
+- Kestra: weekly pipeline orchestration + quarterly model retrain flows
+- GitHub Actions: CI (ruff lint, pytest, config validation) + CD (ECR push, ECS deploy via OIDC)
+- DVC: data version control configured for S3 remote
+- Tests: data quality gates (raw, feature store, model R2) + pipeline unit tests
+- pyproject.toml: ruff + mypy + pytest configuration
+- Updated .gitignore and Makefile with docker/dvc/terraform/mlflow targets

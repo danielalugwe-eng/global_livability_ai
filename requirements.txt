@@ -1,0 +1,43 @@
+
+# Global Livability AI — Dependencies
+
+# Core data
+pandas>=2.2
+numpy>=1.26
+requests>=2.32
+openpyxl>=3.1
+pyarrow>=15.0        # Parquet read/write (data engineering standard)
+
+# Imputation
+scikit-learn==1.4.2
+
+# Feature engineering & ML
+xgboost==2.0.3
+optuna==3.6.1
+
+# Explainability
+shap==0.45.1
+matplotlib==3.8.4
+
+# Forecasting
+prophet==1.1.5
+
+# Dashboard
+streamlit==1.34.0
+plotly==5.22.0
+
+# MLOps — experiment tracking
+mlflow==2.12.2
+boto3>=1.34             # S3 artifact store (used by MLflow + DVC)
+
+# Data version control
+dvc[s3]>=3.50
+
+# Utilities
+pyyaml==6.0.1
+joblib==1.4.0
+
+# ── Dev / CI only (not needed at runtime) ────────────────────────────────────
+# ruff
+# pytest
+# mypy
