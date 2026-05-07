@@ -156,10 +156,22 @@ def main() -> None:
         _ndf = pd.read_csv(names_path)
         name_lookup = dict(zip(_ndf["iso3"], _ndf["country_name"]))
 
+    all_forecasts: list[pd.DataFrame] = []
     for iso3 in sorted(df["iso3"].unique()):
         country_name = name_lookup.get(iso3, iso3)
         log.info("Forecasting: %s (%s)", country_name, iso3)
-        forecast_country(iso3, country_name, df, cfg)
+        fc = forecast_country(iso3, country_name, df, cfg)
+        if len(fc):
+            all_forecasts.append(fc)
+
+    # Consolidate into a single file for the dashboard
+    if all_forecasts:
+        consolidated = pd.concat(all_forecasts, ignore_index=True)
+        out_dir = ROOT / "data" / "forecasts"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        consolidated.to_csv(out_dir / "forecasts.csv", index=False)
+        log.info("Saved consolidated forecasts.csv: %d rows, %d countries",
+                 len(consolidated), consolidated["iso3"].nunique())
 
     log.info("Forecasting complete.")
 

@@ -154,15 +154,24 @@ def _get_wb_countries(timeout: int = 30) -> dict[str, str]:
 
 
 def collect_world_bank(cfg: dict) -> pd.DataFrame:
-    """Batch-fetch all WB indicators for ALL countries (one API call per indicator)."""
+    """Batch-fetch WB indicators. Scope 'sea' restricts to countries in config."""
     indicators: dict[str, str] = cfg["sources"]["world_bank"]["indicators"]
     start_year = cfg["years"]["start"]
     end_year = cfg["years"]["end"]
     min_data_years = cfg.get("min_data_years", 5)
 
-    wb_countries = _get_wb_countries()
-    valid_iso3 = set(wb_countries.keys())
-    log.info("World Bank: fetching %d indicators for all countries", len(indicators))
+    # Determine which ISO3 codes to keep
+    scope = cfg.get("scope", "global")
+    if scope != "global" and "countries" in cfg:
+        valid_iso3: set[str] = set(cfg["countries"].keys())
+        wb_countries: dict[str, str] = cfg["countries"]
+        log.info("Scope=%s: restricting to %d countries: %s",
+                 scope, len(valid_iso3), sorted(valid_iso3))
+    else:
+        wb_countries = _get_wb_countries()
+        valid_iso3 = set(wb_countries.keys())
+    log.info("World Bank: fetching %d indicators for %d countries",
+             len(indicators), len(valid_iso3))
 
     frames: list[pd.DataFrame] = []
     for ind_code, col_name in indicators.items():
@@ -215,7 +224,9 @@ def collect_world_bank(cfg: dict) -> pd.DataFrame:
     df["year"] = df["year"].astype(int)
 
     ind_cols = [c for c in df.columns if c not in ("iso3", "year")]
-    if ind_cols:
+    # For non-global scope the valid_iso3 already restricts the set;
+    # only apply the min_data_years filter when running globally.
+    if scope == "global" and ind_cols:
         counts = df.groupby("iso3")[ind_cols].count().max(axis=1)
         df = df[df["iso3"].isin(counts[counts >= min_data_years].index)]
 
@@ -308,11 +319,18 @@ def collect_undp_hdi(cfg: dict) -> pd.DataFrame:
 # ── 3. WHO GHO ─────────────────────────────────────────────────────────────────
 
 def collect_who_gho(cfg: dict) -> pd.DataFrame:
-    """Fetch WHO GHO indicators via OData REST API (all countries, no filter)."""
+    """Fetch WHO GHO indicators via OData REST API; filters to scope countries."""
     base_url = cfg["sources"]["who_gho"]["base_url"]
     indicators: dict[str, str] = cfg["sources"]["who_gho"]["indicators"]
     start_year = cfg["years"]["start"]
     end_year = cfg["years"]["end"]
+
+    scope = cfg.get("scope", "global")
+    allowed_iso3: set[str] | None = (
+        set(cfg["countries"].keys())
+        if scope != "global" and "countries" in cfg
+        else None
+    )
 
     frames: list[pd.DataFrame] = []
     for code, col_name in indicators.items():
@@ -328,7 +346,10 @@ def collect_who_gho(cfg: dict) -> pd.DataFrame:
                     year = int(rec.get("TimeDim", 0))
                     iso3 = (rec.get("SpatialDim") or "").strip()
                     val = rec.get("NumericValue")
-                    if start_year <= year <= end_year and len(iso3) == 3 and val is not None:
+                    if (start_year <= year <= end_year
+                            and len(iso3) == 3
+                            and val is not None
+                            and (allowed_iso3 is None or iso3 in allowed_iso3)):
                         rows.append({"iso3": iso3, "year": year, col_name: float(val)})
                 except (ValueError, TypeError):
                     continue

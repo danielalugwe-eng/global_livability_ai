@@ -1,9 +1,16 @@
 
-# Global Livability AI — Master Configuration
+# SE Asia Livability AI — Master Configuration
 
 # ── Scope ──────────────────────────────────────────────────────────────────────
-scope: global
-min_data_years: 5   # min years of WB data required to include a country
+scope: sea
+# Explicit country list used when scope != global
+countries:
+  THA: Thailand
+  MYS: Malaysia
+  VNM: Viet Nam
+  IDN: Indonesia
+  PHL: Philippines
+  SGP: Singapore
 
 # ── Data sources ───────────────────────────────────────────────────────────────
 years:
