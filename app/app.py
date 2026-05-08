@@ -581,14 +581,14 @@ def render_data_explorer(df: pd.DataFrame, country_names: dict,
 
 def main() -> None:
     st.set_page_config(
-        page_title="SE Asia Livability AI",
+        page_title="Asia Livability AI",
         page_icon="\U0001f30f",
         layout="wide",
     )
-    st.title("\U0001f30f SE Asia Livability AI")
+    st.title("\U0001f30f Asia Livability AI")
     st.markdown(
         "An AI-powered dashboard tracking and forecasting quality of life across "
-        "Southeast Asia using health, economy, education, environment, and infrastructure data."
+        "49 Asian countriesries using health, economy, education, environment, and infrastructure data."
     )
 
     cfg = load_config()

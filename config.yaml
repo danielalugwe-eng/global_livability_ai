@@ -1,16 +1,62 @@
 
-# SE Asia Livability AI — Master Configuration
+# Asia Livability AI -- Master Configuration
 
-# ── Scope ──────────────────────────────────────────────────────────────────────
-scope: sea
-# Explicit country list used when scope != global
+# -- Scope ------------------------------------------------------------------
+scope: asia
+# All 49 Asian countries across East, Southeast, South, Central & West Asia
 countries:
-  THA: Thailand
-  MYS: Malaysia
-  VNM: Viet Nam
+  # East Asia
+  CHN: China
+  JPN: Japan
+  KOR: Korea, Rep.
+  MNG: Mongolia
+  PRK: Korea, Dem. People's Rep.
+  # Southeast Asia
+  BRN: Brunei Darussalam
   IDN: Indonesia
+  KHM: Cambodia
+  LAO: Lao PDR
+  MMR: Myanmar
+  MYS: Malaysia
   PHL: Philippines
   SGP: Singapore
+  THA: Thailand
+  TLS: Timor-Leste
+  VNM: Viet Nam
+  # South Asia
+  AFG: Afghanistan
+  BGD: Bangladesh
+  BTN: Bhutan
+  IND: India
+  LKA: Sri Lanka
+  MDV: Maldives
+  NPL: Nepal
+  PAK: Pakistan
+  # Central Asia
+  KAZ: Kazakhstan
+  KGZ: Kyrgyz Republic
+  TJK: Tajikistan
+  TKM: Turkmenistan
+  UZB: Uzbekistan
+  # West Asia / Middle East
+  ARE: United Arab Emirates
+  ARM: Armenia
+  AZE: Azerbaijan
+  BHR: Bahrain
+  GEO: Georgia
+  IRN: Iran, Islamic Rep.
+  IRQ: Iraq
+  ISR: Israel
+  JOR: Jordan
+  KWT: Kuwait
+  LBN: Lebanon
+  OMN: Oman
+  PSE: West Bank and Gaza
+  QAT: Qatar
+  SAU: Saudi Arabia
+  SYR: Syrian Arab Republic
+  TUR: Turkiye
+  YEM: Yemen, Rep.
 
 # ── Data sources ───────────────────────────────────────────────────────────────
 years:

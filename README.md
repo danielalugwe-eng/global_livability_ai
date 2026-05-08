@@ -1,8 +1,8 @@
-# SE Asia Livability AI
+# Asia Livability AI
 
-Predict, compare, and forecast livability scores (0 to 100) for 6 Southeast Asian countries using real-world data and machine learning.
+Predict, compare, and forecast livability scores (0 to 100) for **49 Asian countries** spanning East, Southeast, South, Central, and West Asia using real-world data and machine learning.
 
-**Countries covered:** Thailand, Malaysia, Viet Nam, Indonesia, Philippines, Singapore
+**Regions covered:** East Asia, Southeast Asia, South Asia, Central Asia, West Asia / Middle EastMiddle East
 
 ---
 
@@ -216,4 +216,4 @@ countries:
 
 Then re-run the full pipeline starting from `src/collect.py`.
 
-To expand to all countries worldwide, change `scope: sea` to `scope: global` and remove the `countries:` block.
+To expand to all countries worldwide, change `scope: asiia` to `scope: global` and remove the `countries:` block.
