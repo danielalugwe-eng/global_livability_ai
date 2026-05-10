@@ -267,8 +267,8 @@ def render_single(df: pd.DataFrame, fcast: pd.DataFrame | None,
 def render_compare(df: pd.DataFrame, fcast: pd.DataFrame | None,
                    country_names: dict, iso_list: list[str]) -> None:
     st.markdown(
-        "Use the two dropdowns below to pick any two countries. "
-        "Charts and tables update automatically."
+        "Pick two countries to compare side-by-side — livability scores, cost of living, "
+        "currency, history, and everything a potential mover needs to know."
     )
 
     col_a, col_b = st.columns(2)
@@ -289,6 +289,8 @@ def render_compare(df: pd.DataFrame, fcast: pd.DataFrame | None,
 
     name_a = country_names.get(iso_a, iso_a)
     name_b = country_names.get(iso_b, iso_b)
+    prof_a = get_profile(iso_a) or {}
+    prof_b = get_profile(iso_b) or {}
     ranked = _rank_latest(df, country_names)
     latest_year = df["year"].max()
     n_countries = len(ranked)
@@ -302,16 +304,15 @@ def render_compare(df: pd.DataFrame, fcast: pd.DataFrame | None,
     rank_a = _get(iso_a, "rank")
     rank_b = _get(iso_b, "rank")
 
+    # ── Section 1: Livability Scores ─────────────────────────────────────────
     st.markdown("---")
-    st.subheader("Overall Scores")
+    st.subheader("📊 Livability Scores")
     mc1, mc2, mc3, mc4 = st.columns(4)
-    mc1.metric(f"{name_a} -- Score", f"{score_a:.1f}" if isinstance(score_a, float) else score_a)
-    mc2.metric(f"{name_a} -- Rank", f"#{rank_a} of {n_countries}")
-    mc3.metric(f"{name_b} -- Score", f"{score_b:.1f}" if isinstance(score_b, float) else score_b)
-    mc4.metric(f"{name_b} -- Rank", f"#{rank_b} of {n_countries}")
+    mc1.metric(f"🏆 {name_a} — Score", f"{score_a:.1f}" if isinstance(score_a, float) else score_a)
+    mc2.metric(f"📍 {name_a} — Rank", f"#{rank_a} of {n_countries}")
+    mc3.metric(f"🏆 {name_b} — Score", f"{score_b:.1f}" if isinstance(score_b, float) else score_b)
+    mc4.metric(f"📍 {name_b} — Rank", f"#{rank_b} of {n_countries}")
 
-    st.markdown("---")
-    st.subheader("Livability Score Over Time")
     ts_a = df[df["iso3"] == iso_a][["year", "target_score"]].assign(country=name_a)
     ts_b = df[df["iso3"] == iso_b][["year", "target_score"]].assign(country=name_b)
     fig_ts = px.line(
@@ -319,35 +320,185 @@ def render_compare(df: pd.DataFrame, fcast: pd.DataFrame | None,
         markers=True,
         labels={"target_score": "Livability Score", "year": "Year", "country": "Country"},
     )
-    fig_ts.update_layout(height=340)
+    fig_ts.update_layout(height=320)
     st.plotly_chart(fig_ts, use_container_width=True)
 
+    # ── Section 2: Pillar breakdown ──────────────────────────────────────────
     pillar_cols = [c for c in df.columns if c.endswith("_score") and c != "target_score"]
     if pillar_cols:
-        st.subheader("Pillar-by-Pillar Comparison")
+        st.markdown("---")
+        st.subheader("🧩 Pillar-by-Pillar Comparison")
         row_a = df[(df["iso3"] == iso_a) & (df["year"] == latest_year)]
         row_b = df[(df["iso3"] == iso_b) & (df["year"] == latest_year)]
         pillar_labels = [c.replace("_score", "").replace("_", " ").title() for c in pillar_cols]
         vals_a = [float(row_a[c].values[0]) if len(row_a) else 0.0 for c in pillar_cols]
         vals_b = [float(row_b[c].values[0]) if len(row_b) else 0.0 for c in pillar_cols]
 
-        fig_bars = go.Figure([
-            go.Bar(name=name_a, x=pillar_labels, y=vals_a),
-            go.Bar(name=name_b, x=pillar_labels, y=vals_b),
-        ])
-        fig_bars.update_layout(barmode="group", height=380, yaxis_title="Score (0-100)")
-        st.plotly_chart(fig_bars, use_container_width=True)
+        tab_bar, tab_radar, tab_table = st.tabs(["Bar Chart", "Radar", "Table"])
+        with tab_bar:
+            fig_bars = go.Figure([
+                go.Bar(name=name_a, x=pillar_labels, y=vals_a, marker_color="#457b9d"),
+                go.Bar(name=name_b, x=pillar_labels, y=vals_b, marker_color="#e63946"),
+            ])
+            fig_bars.update_layout(barmode="group", height=380, yaxis_title="Score (0-100)")
+            st.plotly_chart(fig_bars, use_container_width=True)
+        with tab_radar:
+            fig_radar = go.Figure()
+            for name, vals, colour in [
+                (name_a, vals_a, "#457b9d"), (name_b, vals_b, "#e63946")
+            ]:
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=vals + [vals[0]], theta=pillar_labels + [pillar_labels[0]],
+                    fill="toself", name=name, line=dict(color=colour),
+                ))
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(range=[0, 100])), height=420,
+            )
+            st.plotly_chart(fig_radar, use_container_width=True)
+        with tab_table:
+            metrics = {"Metric": ["Overall Score", "Regional Rank"] + pillar_labels}
+            metrics[name_a] = [f"{score_a:.1f}", f"#{rank_a}"] + [f"{v:.1f}" for v in vals_a]
+            metrics[name_b] = [f"{score_b:.1f}", f"#{rank_b}"] + [f"{v:.1f}" for v in vals_b]
+            st.dataframe(pd.DataFrame(metrics), use_container_width=True, hide_index=True)
 
-        st.subheader("Summary Table")
-        metrics = {"Metric": ["Overall Score", "Regional Rank"] + pillar_labels}
-        metrics[name_a] = (
-            [f"{score_a:.1f}", f"#{rank_a}"] + [f"{v:.1f}" for v in vals_a]
-        )
-        metrics[name_b] = (
-            [f"{score_b:.1f}", f"#{rank_b}"] + [f"{v:.1f}" for v in vals_b]
-        )
-        st.dataframe(pd.DataFrame(metrics), use_container_width=True, hide_index=True)
+    # ── Section 3: Country Profiles (for movers) ────────────────────────────
+    st.markdown("---")
+    st.subheader("🌏 Country Overview")
+    ca, cb = st.columns(2)
 
+    for col, name, prof in [(ca, name_a, prof_a), (cb, name_b, prof_b)]:
+        with col:
+            st.markdown(f"### {name}")
+            if prof:
+                st.markdown(f"**🏛️ Capital:** {prof.get('capital', '—')}")
+                st.markdown(f"**👥 Population:** {prof.get('population', '—')}")
+                st.markdown(f"**📐 Area:** {prof.get('area_km2', 0):,} km²")
+                langs = prof.get("languages", [])
+                st.markdown(f"**🗣️ Languages:** {', '.join(langs)}")
+            else:
+                st.info("No profile data available.")
+
+    # ── Section 4: History side-by-side ─────────────────────────────────────
+    st.markdown("---")
+    st.subheader("📖 Brief History")
+    ha, hb = st.columns(2)
+    with ha:
+        st.markdown(f"**{name_a}**")
+        st.markdown(prof_a.get("history", "No history available.") if prof_a else "No history available.")
+    with hb:
+        st.markdown(f"**{name_b}**")
+        st.markdown(prof_b.get("history", "No history available.") if prof_b else "No history available.")
+
+    # ── Section 5: Currency comparison ──────────────────────────────────────
+    st.markdown("---")
+    st.subheader("💱 Currency")
+    curr_a = prof_a.get("currency", {}) if prof_a else {}
+    curr_b = prof_b.get("currency", {}) if prof_b else {}
+    cu1, cu2 = st.columns(2)
+    for col, name, curr in [(cu1, name_a, curr_a), (cu2, name_b, curr_b)]:
+        with col:
+            st.markdown(f"**{name}**")
+            if curr:
+                rate = curr.get("approx_usd_rate", None)
+                if rate is not None:
+                    label = f"1 {curr.get('code','?')} = ${1/rate:.2f} USD" if rate < 1 else f"1 USD ≈ {rate:,.2f} {curr.get('code','?')}"
+                else:
+                    label = "—"
+                st.markdown(
+                    f"**{curr.get('name','—')}** &nbsp; `{curr.get('code','—')}` &nbsp; {curr.get('symbol','—')}"
+                )
+                st.markdown(f"📈 Exchange Rate: **{label}**")
+            else:
+                st.info("No currency data.")
+    st.caption("Exchange rates are approximate 2024 averages.")
+
+    # ── Section 6: Cost of Living side-by-side ───────────────────────────────
+    st.markdown("---")
+    st.subheader("🏠 Cost of Living — Side-by-Side (Monthly USD, 2024 approx.)")
+
+    col_labels = get_col_labels()
+    col_a_data = prof_a.get("cost_of_living", {}) if prof_a else {}
+    col_b_data = prof_b.get("cost_of_living", {}) if prof_b else {}
+
+    if col_a_data or col_b_data:
+        # Comparison bar chart
+        expense_keys = [k for k in col_labels if k != "avg_monthly_salary_net"]
+        chart_rows = []
+        for k in expense_keys:
+            chart_rows.append({"Category": col_labels[k], "Country": name_a, "Cost (USD)": col_a_data.get(k, 0)})
+            chart_rows.append({"Category": col_labels[k], "Country": name_b, "Cost (USD)": col_b_data.get(k, 0)})
+        fig_col = px.bar(
+            pd.DataFrame(chart_rows),
+            x="Cost (USD)", y="Category", color="Country", orientation="h",
+            barmode="group",
+            color_discrete_map={name_a: "#457b9d", name_b: "#e63946"},
+            text="Cost (USD)",
+        )
+        fig_col.update_traces(texttemplate="$%{x:,.0f}", textposition="outside")
+        fig_col.update_layout(
+            height=340, margin=dict(l=0, r=60, t=10, b=10), coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig_col, use_container_width=True)
+
+        # Metric cards
+        cla, clb = st.columns(2)
+        for col, name, data in [(cla, name_a, col_a_data), (clb, name_b, col_b_data)]:
+            with col:
+                st.markdown(f"**{name}**")
+                if data:
+                    total_exp = sum(data.get(k, 0) for k in expense_keys)
+                    salary = data.get("avg_monthly_salary_net", 0)
+                    surplus = salary - total_exp
+                    for k in expense_keys:
+                        st.markdown(f"- {col_labels[k]}: **${data.get(k, 0):,.0f}**")
+                    st.markdown(f"- {col_labels['avg_monthly_salary_net']}: **${salary:,.0f}**")
+                    st.markdown(
+                        f"- 💰 Monthly surplus: **${abs(surplus):,.0f}** "
+                        f"({'✅ surplus' if surplus >= 0 else '⚠️ deficit'})"
+                    )
+                else:
+                    st.info("No cost-of-living data.")
+        st.caption("Expenses = rent + groceries + transport + utilities. All figures are approximate 2024 averages.")
+
+    # ── Section 7: Mover's Verdict ───────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("✈️ Mover's Verdict")
+    mv_a, mv_b = st.columns(2)
+    for col, name, prof, iso, score, rank in [
+        (mv_a, name_a, prof_a, iso_a, score_a, rank_a),
+        (mv_b, name_b, prof_b, iso_b, score_b, rank_b),
+    ]:
+        with col:
+            st.markdown(f"#### 🌍 {name}")
+            if prof:
+                curr = prof.get("currency", {})
+                col_data = prof.get("cost_of_living", {})
+                expense_keys = [k for k in col_labels if k != "avg_monthly_salary_net"]
+                total = sum(col_data.get(k, 0) for k in expense_keys) if col_data else 0
+                salary = col_data.get("avg_monthly_salary_net", 0) if col_data else 0
+                rate = curr.get("approx_usd_rate", None)
+                rate_str = (f"1 USD ≈ {rate:,.1f} {curr.get('code','?')}" if rate and rate >= 1
+                            else f"1 {curr.get('code','?')} = ${1/rate:.2f} USD" if rate else "—")
+                st.markdown(
+                    f"| | |\n|---|---|\n"
+                    f"| 🏆 Livability Score | **{score:.1f}/100** |\n"
+                    f"| 📍 Regional Rank | **#{rank} of {n_countries}** |\n"
+                    f"| 💱 Currency | **{curr.get('name','—')} ({curr.get('code','—')})** |\n"
+                    f"| 📈 Exchange Rate | **{rate_str}** |\n"
+                    f"| 🏠 Est. Monthly Expenses | **${total:,.0f} USD** |\n"
+                    f"| 💰 Avg Net Salary | **${salary:,.0f} USD** |\n"
+                    f"| 🗣️ Language | **{', '.join(prof.get('languages', ['—'])[:2])}** |\n"
+                    f"| 👥 Population | **{prof.get('population','—')}** |"
+                )
+                facts = prof.get("fun_facts", [])
+                if facts:
+                    st.markdown("**💡 Key Facts:**")
+                    for fact in facts:
+                        st.markdown(f"- {fact}")
+            else:
+                st.info("No profile data available.")
+
+    # ── Section 8: Forecast comparison ───────────────────────────────────────
     if fcast is not None:
         fc_a = fcast[fcast["iso3"] == iso_a]
         fc_b = fcast[fcast["iso3"] == iso_b]
@@ -355,8 +506,8 @@ def render_compare(df: pd.DataFrame, fcast: pd.DataFrame | None,
         future_b = fc_b[fc_b["year"] > latest_year] if len(fc_b) else fc_b
         if len(future_a) or len(future_b):
             st.markdown("---")
-            st.subheader("Forecast Comparison (Next 5 Years)")
-            st.markdown("Side-by-side forecast with 95% confidence band for each country.")
+            st.subheader("🔮 Forecast Comparison (Next 5 Years)")
+            st.markdown("Side-by-side forecast with 95% confidence band.")
             fc1, fc2 = st.columns(2)
             for col, fc_sub, name in [(fc1, future_a, name_a), (fc2, future_b, name_b)]:
                 if len(fc_sub):
