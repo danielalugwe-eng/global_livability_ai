@@ -21,6 +21,8 @@ import plotly.graph_objects as go
 import streamlit as st
 import yaml
 
+from country_profiles import COUNTRY_PROFILES, get_col_labels, get_profile
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -576,6 +578,188 @@ def render_data_explorer(df: pd.DataFrame, country_names: dict,
 
 
 # ---------------------------------------------------------------------------
+# Country Insights tab
+# ---------------------------------------------------------------------------
+
+def render_insights(df: pd.DataFrame, country_names: dict, iso_list: list[str]) -> None:
+    """Render the Country Insights tab: history, currency, and cost-of-living."""
+
+    st.markdown(
+        "Select a country to explore its background, currency, and cost-of-living breakdown."
+    )
+
+    iso3 = _country_dropdown(
+        "Select a country", iso_list, country_names,
+        default_isos=["SGP", "JPN", "THA"], key="ins_sel",
+    )
+
+    profile = get_profile(iso3)
+
+    if profile is None:
+        st.info(
+            f"No detailed profile available yet for **{country_names.get(iso3, iso3)}** ({iso3}). "
+            "Quantitative data is still shown below."
+        )
+    else:
+        cname = profile["name"]
+
+        # ── Header ─────────────────────────────────────────────────────────
+        st.markdown(f"## 🌏 {cname}")
+
+        # ── Quick Facts ─────────────────────────────────────────────────────
+        st.subheader("Quick Facts")
+        qf1, qf2, qf3, qf4 = st.columns(4)
+        qf1.metric("🏛️ Capital", profile.get("capital", "—"))
+        qf2.metric("👥 Population", profile.get("population", "—"))
+        qf3.metric("📐 Area (km²)", f"{profile.get('area_km2', 0):,}")
+        langs = profile.get("languages", [])
+        qf4.metric("🗣️ Language(s)", langs[0] if langs else "—")
+        if len(langs) > 1:
+            st.caption("Also spoken: " + ", ".join(langs[1:]))
+
+        # ── History ─────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("📖 Brief History")
+        st.markdown(profile.get("history", "No history available."))
+
+        # ── Currency ────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("💱 Currency")
+        curr = profile.get("currency", {})
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        cc1.metric("Name", curr.get("name", "—"))
+        cc2.metric("ISO Code", curr.get("code", "—"))
+        cc3.metric("Symbol", curr.get("symbol", "—"))
+        rate = curr.get("approx_usd_rate", None)
+        if rate is not None:
+            if rate < 1:
+                label = f"1 {curr.get('code','?')} = ${1/rate:.2f} USD"
+            else:
+                label = f"1 USD ≈ {rate:,.2f} {curr.get('code','?')}"
+            cc4.metric("Exchange Rate (≈ 2024)", label)
+        st.caption(
+            "Exchange rates are approximate 2024 averages. Actual rates vary; "
+            "always check a live source before transacting."
+        )
+
+        # ── Cost of Living ───────────────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("🏠 Cost of Living (Approximate Monthly USD, 2024)")
+        col_labels = get_col_labels()
+        col_data = profile.get("cost_of_living", {})
+
+        if col_data:
+            # Metric cards for key figures
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("🏠 Rent – 1BR City", f"${col_data.get('monthly_rent_city_1br', 0):,.0f}")
+            m2.metric("🛒 Groceries", f"${col_data.get('monthly_groceries', 0):,.0f}")
+            m3.metric("🚌 Transport Pass", f"${col_data.get('monthly_transport', 0):,.0f}")
+            m4.metric("💡 Utilities", f"${col_data.get('monthly_utilities', 0):,.0f}")
+            m5, m6 = st.columns(2)
+            m5.metric("💰 Avg Net Salary", f"${col_data.get('avg_monthly_salary_net', 0):,.0f}")
+            m6.metric("🍜 Cheap Meal", f"${col_data.get('meal_cheap_restaurant', 0):.1f}")
+
+            st.markdown("##### Monthly Expense Breakdown")
+            expense_keys = [k for k in col_labels if k != "avg_monthly_salary_net" and k in col_data]
+            bar_df = pd.DataFrame({
+                "Category": [col_labels[k] for k in expense_keys],
+                "Cost (USD)": [col_data[k] for k in expense_keys],
+            })
+
+            # Regional benchmark comparison
+            latest_year = df["year"].max()
+            peers_isos = [
+                i for i in iso_list
+                if get_profile(i) and i != iso3
+            ]
+            peer_rents = [
+                get_profile(i)["cost_of_living"].get("monthly_rent_city_1br", 0)
+                for i in peers_isos
+                if get_profile(i).get("cost_of_living")
+            ]
+            regional_avg_rent = sum(peer_rents) / len(peer_rents) if peer_rents else 0
+
+            fig_bar = px.bar(
+                bar_df, x="Cost (USD)", y="Category", orientation="h",
+                text="Cost (USD)",
+                color="Cost (USD)",
+                color_continuous_scale="Blues",
+                labels={"Cost (USD)": "Monthly Cost (USD)", "Category": ""},
+            )
+            fig_bar.update_traces(texttemplate="$%{x:,.0f}", textposition="outside")
+            fig_bar.update_layout(
+                height=320,
+                coloraxis_showscale=False,
+                margin=dict(l=0, r=60, t=10, b=10),
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Salary vs total expenses gauge
+            total_expenses = sum(col_data.get(k, 0) for k in expense_keys)
+            salary = col_data.get("avg_monthly_salary_net", 1)
+            afford_pct = min(total_expenses / salary * 100, 200) if salary else 0
+            surplus = salary - total_expenses
+
+            ae1, ae2, ae3 = st.columns(3)
+            ae1.metric("Total Monthly Expenses", f"${total_expenses:,.0f}")
+            ae2.metric("Avg Net Salary", f"${salary:,.0f}")
+            color = "normal" if surplus >= 0 else "inverse"
+            ae3.metric(
+                "Monthly Surplus / Deficit",
+                f"${abs(surplus):,.0f}",
+                delta=f"{'Surplus' if surplus >= 0 else 'Deficit'}",
+                delta_color=color,
+            )
+            st.caption(
+                "Expenses = rent + groceries + transport + utilities. "
+                "Meal cost is not included in the total. All figures are approximate."
+            )
+
+            # Affordability comparison vs regional peers
+            all_profiles_col = {
+                i: get_profile(i)["cost_of_living"]
+                for i in iso_list
+                if get_profile(i) and get_profile(i).get("cost_of_living")
+            }
+            if len(all_profiles_col) > 1:
+                st.markdown("##### How does it compare? (Regional Rent Comparison)")
+                rent_compare = pd.DataFrame([
+                    {
+                        "Country": country_names.get(i, i),
+                        "Monthly Rent 1BR (USD)": all_profiles_col[i].get("monthly_rent_city_1br", 0),
+                        "Selected": (i == iso3),
+                    }
+                    for i in iso_list
+                    if i in all_profiles_col
+                ]).sort_values("Monthly Rent 1BR (USD)", ascending=True)
+
+                fig_cmp = px.bar(
+                    rent_compare,
+                    x="Monthly Rent 1BR (USD)", y="Country",
+                    orientation="h",
+                    color="Selected",
+                    color_discrete_map={True: "#e63946", False: "#457b9d"},
+                    labels={"Monthly Rent 1BR (USD)": "Monthly Rent – 1BR City Centre (USD)"},
+                )
+                fig_cmp.update_layout(
+                    height=max(300, 18 * len(rent_compare)),
+                    showlegend=False,
+                    margin=dict(l=0, r=20, t=10, b=10),
+                )
+                st.plotly_chart(fig_cmp, use_container_width=True)
+
+        st.caption("Cost-of-living estimates are sourced from Numbeo-style 2024 averages and may vary by city.")
+
+        # ── Fun Facts ────────────────────────────────────────────────────────
+        facts = profile.get("fun_facts", [])
+        if facts:
+            st.markdown("---")
+            st.subheader("💡 Did You Know?")
+            for fact in facts:
+                st.markdown(f"- {fact}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -643,12 +827,13 @@ def main() -> None:
     fcast = load_forecasts()
 
     # ---- Tabs --------------------------------------------------------------
-    tab_map, tab_single, tab_compare, tab_forecast, tab_data = st.tabs([
+    tab_map, tab_single, tab_compare, tab_forecast, tab_data, tab_insights = st.tabs([
         "\U0001f5fa  World Map",
         "\U0001f50d  Country Analysis",
         "\U0001f4ca  Compare Countries",
         "\U0001f52e  Forecast",
         "\U0001f5c3  Data Explorer",
+        "\U0001f4d6  Country Insights",
     ])
 
     with tab_map:
@@ -669,6 +854,10 @@ def main() -> None:
     with tab_data:
         st.subheader("Data Explorer")
         render_data_explorer(df, country_names, iso_list)
+
+    with tab_insights:
+        st.subheader("Country Insights")
+        render_insights(df, country_names, iso_list)
 
 
 if __name__ == "__main__":

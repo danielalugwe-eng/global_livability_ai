@@ -1,0 +1,5 @@
+max_depth: 14
+max_features: log2
+min_samples_leaf: 2
+min_samples_split: 11
+n_estimators: 423
