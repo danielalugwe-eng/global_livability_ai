@@ -25,6 +25,7 @@ prophet==1.1.5
 # Dashboard
 streamlit==1.34.0
 plotly==5.22.0
+Pillow>=10.0
 
 # MLOps — experiment tracking
 mlflow==2.12.2
